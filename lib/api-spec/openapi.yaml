@@ -10,6 +10,16 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: goals
+    description: Accountability goals
+  - name: events
+    description: Factual accountability history
+  - name: settings
+    description: Accountability configuration
+  - name: dashboard
+    description: Overview data
+  - name: chat
+    description: Accountability partner chat
 paths:
   /healthz:
     get:
@@ -24,7 +34,288 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get accountability overview
+      responses:
+        "200":
+          description: Current overview and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /goals:
+    get:
+      operationId: listGoals
+      tags: [goals]
+      summary: List accountability goals
+      responses:
+        "200":
+          description: Goals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Goal"
+    post:
+      operationId: createGoal
+      tags: [goals]
+      summary: Propose a goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoalInput"
+      responses:
+        "201":
+          description: Proposed goal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+  /goals/{id}:
+    get:
+      operationId: getGoal
+      tags: [goals]
+      summary: Get a goal
+      parameters:
+        - $ref: "#/components/parameters/GoalId"
+      responses:
+        "200":
+          description: Goal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateGoal
+      tags: [goals]
+      summary: Edit a proposed or unlocked goal
+      parameters:
+        - $ref: "#/components/parameters/GoalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoalUpdate"
+      responses:
+        "200":
+          description: Updated goal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+        "409":
+          description: Goal is locked or in its amendment cooldown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteGoal
+      tags: [goals]
+      summary: Delete a proposed or unlocked goal
+      parameters:
+        - $ref: "#/components/parameters/GoalId"
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: Goal cannot be deleted yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /goals/{id}/lock:
+    post:
+      operationId: lockGoal
+      tags: [goals]
+      summary: Confirm and lock a proposed goal
+      parameters:
+        - $ref: "#/components/parameters/GoalId"
+      responses:
+        "200":
+          description: Active locked goal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+        "409":
+          description: Goal is not proposed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /goals/{id}/amend:
+    post:
+      operationId: requestGoalAmendment
+      tags: [goals]
+      summary: Start the 24-hour amendment cooldown
+      parameters:
+        - $ref: "#/components/parameters/GoalId"
+      responses:
+        "200":
+          description: Goal with amendment window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Goal"
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List factual accountability events
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: Log an accountability event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Logged event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+  /ladder:
+    get:
+      operationId: getLadder
+      tags: [settings]
+      summary: Get the predefined consequence ladder
+      responses:
+        "200":
+          description: Ladder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ladder"
+    put:
+      operationId: updateLadder
+      tags: [settings]
+      summary: Replace the predefined consequence ladder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LadderInput"
+      responses:
+        "200":
+          description: Ladder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ladder"
+  /contact:
+    get:
+      operationId: getContact
+      tags: [settings]
+      summary: Get the accountability contact
+      responses:
+        "200":
+          description: Contact or empty state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    put:
+      operationId: updateContact
+      tags: [settings]
+      summary: Save the accountability contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactInput"
+      responses:
+        "200":
+          description: Contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+  /contact/confirm:
+    post:
+      operationId: confirmContact
+      tags: [settings]
+      summary: Confirm the contact has consented
+      responses:
+        "200":
+          description: Confirmed contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+  /chat:
+    post:
+      operationId: sendChatMessage
+      tags: [chat]
+      summary: Send a message to the accountability partner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "503":
+          description: LLM provider has not been configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    GoalId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +324,113 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Goal:
+      type: object
+      required: [id, name, successCondition, failureCondition, status, createdAt, lockedAt, editUnlockAt, checkInTime]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        successCondition: { type: string }
+        failureCondition: { type: string }
+        status:
+          type: string
+          enum: [proposed, active, locked, failed, completed]
+        createdAt: { type: string, format: date-time }
+        lockedAt: { type: ["string", "null"], format: date-time }
+        editUnlockAt: { type: ["string", "null"], format: date-time }
+        checkInTime: { type: ["string", "null"] }
+    GoalInput:
+      type: object
+      required: [name, successCondition, failureCondition]
+      properties:
+        name: { type: string, minLength: 1 }
+        successCondition: { type: string, minLength: 1 }
+        failureCondition: { type: string, minLength: 1 }
+        checkInTime: { type: ["string", "null"] }
+    GoalUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        successCondition: { type: string, minLength: 1 }
+        failureCondition: { type: string, minLength: 1 }
+        checkInTime: { type: ["string", "null"] }
+    Event:
+      type: object
+      required: [id, goalId, type, content, createdAt]
+      properties:
+        id: { type: integer }
+        goalId: { type: ["integer", "null"] }
+        type:
+          type: string
+          enum: [check_in, failure, consequence_issued, consequence_done, note, escalation_sent]
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+    EventInput:
+      type: object
+      required: [type, content]
+      properties:
+        goalId: { type: ["integer", "null"] }
+        type:
+          type: string
+          enum: [check_in, failure, consequence_issued, consequence_done, note, escalation_sent]
+        content: { type: string, minLength: 1 }
+    Ladder:
+      type: object
+      required: [tiers]
+      properties:
+        tiers:
+          type: array
+          items: { type: string }
+    LadderInput:
+      type: object
+      required: [tiers]
+      properties:
+        tiers:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+    Contact:
+      type: object
+      required: [id, name, phoneNumber, email, consentConfirmedAt]
+      properties:
+        id: { type: ["integer", "null"] }
+        name: { type: string }
+        phoneNumber: { type: string }
+        email: { type: string }
+        consentConfirmedAt: { type: ["string", "null"], format: date-time }
+    ContactInput:
+      type: object
+      required: [name, phoneNumber]
+      properties:
+        name: { type: string, minLength: 1 }
+        phoneNumber: { type: string, minLength: 7 }
+        email: { type: string }
+    Dashboard:
+      type: object
+      required: [activeGoals, proposedGoals, overdueGoals, checkInsToday, recentEvents]
+      properties:
+        activeGoals: { type: integer }
+        proposedGoals: { type: integer }
+        overdueGoals: { type: integer }
+        checkInsToday: { type: integer }
+        recentEvents:
+          type: array
+          items: { $ref: "#/components/schemas/Event" }
+    ChatInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1 }
+    ChatResponse:
+      type: object
+      required: [message, providerConfigured]
+      properties:
+        message: { type: string }
+        providerConfigured: { type: boolean }
 

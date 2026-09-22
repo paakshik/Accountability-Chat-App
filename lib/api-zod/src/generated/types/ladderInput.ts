@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface LadderInput {
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  tiers: string[];
 }
