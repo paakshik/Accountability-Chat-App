@@ -13,6 +13,7 @@ export * from './chatTurnRole';
 export * from './contact';
 export * from './contactInput';
 export * from './dashboard';
+export * from './daySummary';
 export * from './error';
 export * from './event';
 export * from './eventInput';

@@ -5,6 +5,7 @@ import {
   getEvents,
   getGoal,
   getGoals,
+  getDaySummary,
   getLadder,
   localTimeInfo,
   logSlip,
@@ -104,6 +105,12 @@ const TOOLS = {
       },
     },
     {
+      name: "close_day",
+      description:
+        "Close out the day and retrieve its scored summary. Call this when the user says they are ending the day, wrapping up, going to sleep, or asks how the day went. The score is computed from the stored record — you report it, you do not decide it.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+    {
       name: "propose_goal",
       description:
         "Create a new goal in the 'proposed' state after the user has agreed to its exact terms. Proposed goals are freely editable and are NOT in force: the user must confirm and lock them in the Goals screen. Never imply a proposed goal is active.",
@@ -190,7 +197,19 @@ TOOLS. You have three:
   before calling. A proposed goal is NOT in force: say plainly that they must confirm and
   lock it in the Goals screen before it counts or triggers reminders.
 
+- close_day — call this when the user says they are ending the day, wrapping up, or asks
+  how the day went. It returns a score computed from the record. Read it out as given.
+
 Call the tool before replying, and say plainly what you logged.
+
+DAY CLOSE IS THE ONE PLACE WARMTH IS EARNED. Everywhere else you are a factual record and
+not a motivational assistant. At day close, if the score says the day was held, say so
+directly and name the specific thing that went right — that is reporting a fact, not
+flattery, and a system that only ever reports failures is one worth abandoning. Keep it
+short and specific: "Four of four checkpoints, nothing lost" beats "amazing work". Never
+inflate a score, never praise a day the record does not support, and never soften a bad
+one — on a poor day give the number plainly, no shame and no pep talk, then name the next
+checkpoint.
 
 LIMITS. You cannot write failure, consequence_issued or escalation_sent events directly;
 log_slip is the only path to a consequence, and the scheduler owns the rest. You cannot
@@ -485,8 +504,21 @@ function runProposeGoal(args: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
+function runCloseDay(): Record<string, unknown> {
+  const summary = getDaySummary();
+  logger.info({ score: summary.score, band: summary.band }, "Chat closed the day");
+  return {
+    status: "computed",
+    ...summary,
+    instruction:
+      "Report this score and these facts as they are. Do not recompute, round, inflate or soften it. If the day was held, say so plainly and name the specific thing that went right — that acknowledgement is earned and you may give it. If it was not, state it as a fact in the log, with no shame framing and no pep talk. End by naming the next checkpoint.",
+  };
+}
+
 function runTool(name: string | undefined, args: Record<string, unknown>): Record<string, unknown> {
   switch (name) {
+    case "close_day":
+      return runCloseDay();
     case "log_event":
       return runLogEvent(args);
     case "log_slip":

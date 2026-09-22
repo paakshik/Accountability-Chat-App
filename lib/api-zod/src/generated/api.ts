@@ -285,6 +285,24 @@ export const LogSlipResponse = zod.object({
 
 
 /**
+ * @summary Scored summary of how the current day was actually spent
+ */
+export const GetDaySummaryResponse = zod.object({
+  "date": zod.string(),
+  "score": zod.number().int().nullable().describe('0-100, or null when no commitment was in force to measure'),
+  "band": zod.string(),
+  "checkpointsDue": zod.number().int(),
+  "checkpointsAnswered": zod.number().int(),
+  "slipCount": zod.number().int(),
+  "slipMinutes": zod.number().int(),
+  "consequencesIssued": zod.number().int(),
+  "consequencesDone": zod.number().int(),
+  "failures": zod.number().int(),
+  "facts": zod.array(zod.string()).describe('Plain statements of what the record shows, for the partner to read back')
+})
+
+
+/**
  * @summary Get the predefined consequence ladder
  */
 

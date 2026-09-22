@@ -336,43 +336,52 @@ export function countEventsSince(type: EventType, since: string): number {
   return Number(row.count);
 }
 
+const parseHhMm = (value: string | null): number | null => {
+  if (!value) return null;
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+
 /**
  * Has `goal` been checked in for today?
  *
  * A check-in logged from the app carries no goal id, because one submission is meant to
- * cover the day's commitments. With every goal sharing a single deadline that was just
- * "any check-in counts". With staggered checkpoints it cannot be: a 13:00 check-in must
- * not silence the 18:00 one.
+ * cover the day's commitments. With staggered checkpoints that cannot mean "any check-in
+ * counts": answering at 13:00 must not silence the 17:00 checkpoint, and answering once
+ * at 22:30 must not retroactively clear the 13:00 and 17:00 ones that were ignored.
  *
- * So an unattached check-in counts for a goal only if it was logged at or after that
- * goal's own check-in time — i.e. it is plausibly a response to that checkpoint, not a
- * pre-emptive answer to a deadline that has not arrived. A check-in explicitly tagged
- * with the goal id always counts.
+ * So an unattached check-in counts for a goal only inside that goal's own window — from
+ * its check-in time until the next checkpoint falls due. Miss the window and the
+ * checkpoint stays unanswered, which is the whole point of having more than one.
+ *
+ * A check-in tagged with an explicit goal id always counts, so a deliberate late entry
+ * is still possible — it just has to be deliberate.
  */
 export function hasCheckInForGoal(goal: Goal, now: Date = new Date()): boolean {
   const dayStart = new Date(now);
   dayStart.setHours(0, 0, 0, 0);
   const sinceIso = dayStart.toISOString();
+  const iso = (minutes: number) => new Date(dayStart.getTime() + minutes * 60_000).toISOString();
 
-  const checkInMinutes = (() => {
-    if (!goal.checkInTime) return null;
-    const match = /^(\d{2}):(\d{2})$/.exec(goal.checkInTime);
-    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
-  })();
+  const checkInMinutes = parseHhMm(goal.checkInTime);
 
-  const deadlineIso =
-    checkInMinutes === null
-      ? sinceIso
-      : new Date(dayStart.getTime() + checkInMinutes * 60_000).toISOString();
+  // Window closes when the next checkpoint in force falls due, else at midnight.
+  const laterTimes = getGoals()
+    .filter((other) => ["active", "locked"].includes(other.status))
+    .map((other) => parseHhMm(other.checkInTime))
+    .filter((minutes): minutes is number => minutes !== null && checkInMinutes !== null && minutes > checkInMinutes);
+
+  const windowStart = checkInMinutes === null ? sinceIso : iso(checkInMinutes);
+  const windowEnd = laterTimes.length > 0 ? iso(Math.min(...laterTimes)) : iso(24 * 60);
 
   const row = sqlite
     .prepare(
       `SELECT COUNT(*) AS count FROM events
        WHERE type = 'check_in'
          AND created_at >= ?
-         AND (goal_id = ? OR (goal_id IS NULL AND created_at >= ?))`,
+         AND (goal_id = ? OR (goal_id IS NULL AND created_at >= ? AND created_at < ?))`,
     )
-    .get(sinceIso, goal.id, deadlineIso) as { count: number };
+    .get(sinceIso, goal.id, windowStart, windowEnd) as { count: number };
 
   return Number(row.count) > 0;
 }
@@ -581,6 +590,110 @@ export function markSchedulerState(
 /** Keep the table from growing without bound; nothing reads past days. */
 export function pruneSchedulerState(beforeDay: string): void {
   sqlite.prepare("DELETE FROM scheduler_state WHERE day < ?").run(beforeDay);
+}
+
+export type DaySummary = {
+  date: string;
+  score: number | null;
+  band: string;
+  checkpointsDue: number;
+  checkpointsAnswered: number;
+  slipCount: number;
+  slipMinutes: number;
+  consequencesIssued: number;
+  consequencesDone: number;
+  failures: number;
+  facts: string[];
+};
+
+// `logSlip` writes this exact shape, so the minutes can be read back out of the row.
+const SLIP_MINUTES = /Reported slip of (\d+) minute/i;
+
+/**
+ * Scores the day from the stored record — never from anything said in conversation.
+ *
+ * Deliberately deterministic: the partner reads this out, it does not decide it. A score
+ * the model could be talked into would be flattery, and the rest of this system exists
+ * precisely so that what happened cannot be renegotiated after the fact.
+ *
+ * Weighting: checkpoints answered (60), time held (25), consequences repaired (15).
+ * Repair is weighted on purpose — reporting a slip costs focus points, so completing the
+ * consequence is how an honest bad day scores better than a concealed one.
+ */
+export function getDaySummary(now: Date = new Date()): DaySummary {
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const sinceIso = dayStart.toISOString();
+  const date = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, "0")}-${String(dayStart.getDate()).padStart(2, "0")}`;
+  const nowTime = now.toTimeString().slice(0, 5);
+
+  const inForce = getGoals().filter(
+    (goal) => ["active", "locked"].includes(goal.status) && goal.checkInTime,
+  );
+  const due = inForce.filter((goal) => goal.checkInTime! <= nowTime);
+  const answered = due.filter((goal) => hasCheckInForGoal(goal, now));
+
+  const todaysEvents = (
+    sqlite
+      .prepare("SELECT * FROM events WHERE created_at >= ? ORDER BY id ASC")
+      .all(sinceIso) as Record<string, unknown>[]
+  ).map(toEvent);
+
+  const failures = todaysEvents.filter((event) => event.type === "failure");
+  const slips = failures.filter((event) => SLIP_MINUTES.test(event.content));
+  const slipMinutes = slips.reduce((total, event) => {
+    const match = SLIP_MINUTES.exec(event.content);
+    return total + (match ? Number(match[1]) : 0);
+  }, 0);
+  const consequencesIssued = todaysEvents.filter((e) => e.type === "consequence_issued").length;
+  const consequencesDone = todaysEvents.filter((e) => e.type === "consequence_done").length;
+
+  let score: number | null = null;
+  if (due.length > 0 || todaysEvents.length > 0) {
+    const checkpoints = due.length === 0 ? 60 : (answered.length / due.length) * 60;
+    // 150 minutes lost zeroes this component.
+    const focus = Math.max(0, 25 - slipMinutes / 6);
+    const repair =
+      consequencesIssued === 0
+        ? 15
+        : (Math.min(consequencesDone, consequencesIssued) / consequencesIssued) * 15;
+    score = Math.round(checkpoints + focus + repair);
+  }
+
+  const band =
+    score === null
+      ? "nothing in force"
+      : score >= 90
+        ? "held"
+        : score >= 75
+          ? "mostly held"
+          : score >= 50
+            ? "partial"
+            : "not held";
+
+  const facts: string[] = [];
+  if (due.length > 0) facts.push(`${answered.length} of ${due.length} checkpoints answered.`);
+  else facts.push("No checkpoints were due today.");
+  if (slips.length > 0) facts.push(`${slips.length} slip(s) reported, ${slipMinutes} minutes total.`);
+  else facts.push("No slips reported.");
+  if (consequencesIssued > 0) facts.push(`${consequencesIssued} consequence(s) issued, ${consequencesDone} logged done.`);
+  const missed = failures.length - slips.length;
+  if (missed > 0) facts.push(`${missed} missed check-in(s) recorded by the scheduler.`);
+  if (inForce.length === 0) facts.push("No goals are locked, so nothing was being tracked.");
+
+  return {
+    date,
+    score,
+    band,
+    checkpointsDue: due.length,
+    checkpointsAnswered: answered.length,
+    slipCount: slips.length,
+    slipMinutes,
+    consequencesIssued,
+    consequencesDone,
+    failures: failures.length,
+    facts,
+  };
 }
 
 export function getDashboard() {

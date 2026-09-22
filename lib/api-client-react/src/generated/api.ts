@@ -25,6 +25,7 @@ import type {
   Contact,
   ContactInput,
   Dashboard,
+  DaySummary,
   Error,
   Event,
   EventInput,
@@ -1036,6 +1037,83 @@ export const useLogSlip = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getLogSlipMutationOptions(options));
     }
+
+export const getGetDaySummaryUrl = () => {
+
+
+
+
+  return `/api/day-summary`
+}
+
+/**
+ * @summary Scored summary of how the current day was actually spent
+ */
+export const getDaySummary = async ( options?: Parameters<typeof customFetch>[1]): Promise<DaySummary> => {
+
+  return customFetch<DaySummary>(getGetDaySummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDaySummaryQueryKey = () => {
+    return [
+    `/api/day-summary`
+    ] as const;
+    }
+
+
+export const getGetDaySummaryQueryOptions = <TData = Awaited<ReturnType<typeof getDaySummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDaySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDaySummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDaySummary>>> = ({ signal }) => getDaySummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDaySummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDaySummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getDaySummary>>>
+export type GetDaySummaryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Scored summary of how the current day was actually spent
+ */
+
+export function useGetDaySummary<TData = Awaited<ReturnType<typeof getDaySummary>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDaySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDaySummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetLadderUrl = () => {
 

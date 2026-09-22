@@ -224,6 +224,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SlipResult"
+  /day-summary:
+    get:
+      operationId: getDaySummary
+      tags: [dashboard]
+      summary: Scored summary of how the current day was actually spent
+      responses:
+        "200":
+          description: Day summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaySummary"
   /ladder:
     get:
       operationId: getLadder
@@ -464,6 +476,37 @@ components:
           type: array
           minItems: 1
           items: { $ref: "#/components/schemas/LadderTier" }
+    DaySummary:
+      type: object
+      required:
+        - date
+        - score
+        - band
+        - checkpointsDue
+        - checkpointsAnswered
+        - slipCount
+        - slipMinutes
+        - consequencesIssued
+        - consequencesDone
+        - failures
+        - facts
+      properties:
+        date: { type: string }
+        score:
+          type: ["integer", "null"]
+          description: 0-100, or null when no commitment was in force to measure
+        band: { type: string }
+        checkpointsDue: { type: integer }
+        checkpointsAnswered: { type: integer }
+        slipCount: { type: integer }
+        slipMinutes: { type: integer }
+        consequencesIssued: { type: integer }
+        consequencesDone: { type: integer }
+        failures: { type: integer }
+        facts:
+          type: array
+          items: { type: string }
+          description: Plain statements of what the record shows, for the partner to read back
     TestMessageInput:
       type: object
       required: [channel]

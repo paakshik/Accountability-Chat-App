@@ -7,6 +7,7 @@ import {
   CreateGoalResponse,
   GetContactResponse,
   GetDashboardResponse,
+  GetDaySummaryResponse,
   GetGoalParams,
   GetGoalResponse,
   GetLadderResponse,
@@ -38,6 +39,7 @@ import {
   deleteGoal,
   getContact,
   getDashboard,
+  getDaySummary,
   getEvents,
   getGoal,
   getGoals,
@@ -60,6 +62,10 @@ const router: IRouter = Router();
 
 router.get("/dashboard", (_req, res) => {
   res.json(GetDashboardResponse.parse(getDashboard()));
+});
+
+router.get("/day-summary", (_req, res) => {
+  res.json(GetDaySummaryResponse.parse(getDaySummary()));
 });
 
 router.get("/goals", (_req, res) => {

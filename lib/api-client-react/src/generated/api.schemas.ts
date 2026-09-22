@@ -131,6 +131,25 @@ export interface LadderInput {
   tiers: LadderTier[];
 }
 
+export interface DaySummary {
+  date: string;
+  /**
+     * 0-100, or null when no commitment was in force to measure
+     * @nullable
+     */
+  score: number | null;
+  band: string;
+  checkpointsDue: number;
+  checkpointsAnswered: number;
+  slipCount: number;
+  slipMinutes: number;
+  consequencesIssued: number;
+  consequencesDone: number;
+  failures: number;
+  /** Plain statements of what the record shows, for the partner to read back */
+  facts: string[];
+}
+
 export type TestMessageInputChannel = typeof TestMessageInputChannel[keyof typeof TestMessageInputChannel];
 
 
