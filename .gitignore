@@ -47,3 +47,13 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Runtime state for the api-server SQLite store and consequence ladder.
+# Seed goals and the default ladder are recreated automatically on first boot,
+# so this is regenerated data, not source.
+artifacts/api-server/.data/
+
+# Local secrets. .env.example is the committed template; .env itself never is.
+.env
+.env.*
+!.env.example

@@ -5,11 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { LadderTier } from './ladderTier';
 
 export interface LadderInput {
-  /**
-     * @minItems 1
-     * @items.minLength 1
-     */
-  tiers: string[];
+  /** @minItems 1 */
+  tiers: LadderTier[];
 }

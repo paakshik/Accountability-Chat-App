@@ -5,8 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { LadderTier } from './ladderTier';
+import type { ChatTurnRole } from './chatTurnRole';
 
-export interface Ladder {
-  tiers: LadderTier[];
+export interface ChatTurn {
+  role: ChatTurnRole;
+  text: string;
 }

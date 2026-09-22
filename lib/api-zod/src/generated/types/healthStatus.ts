@@ -8,4 +8,11 @@
 
 export interface HealthStatus {
   status: string;
+  /** ok, or a description of why the store is unusable */
+  database: string;
+  /** Server local time the scheduler compares check-in times against */
+  time: string;
+  timezone: string;
+  /** Which Twilio delivery path is configured, or why none is */
+  outboundMessaging: string;
 }

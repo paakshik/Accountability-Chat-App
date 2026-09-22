@@ -13,7 +13,11 @@ import * as zod from 'zod';
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.string(),
+  "database": zod.string().describe('ok, or a description of why the store is unusable'),
+  "time": zod.string().describe('Server local time the scheduler compares check-in times against'),
+  "timezone": zod.string(),
+  "outboundMessaging": zod.string().describe('Which Twilio delivery path is configured, or why none is')
 })
 
 
@@ -241,10 +245,57 @@ export const CreateEventResponse = zod.object({
 
 
 /**
+ * @summary Record a time slip and issue its predefined consequence
+ */
+export const logSlipBodyMinutesMax = 1440;
+
+
+
+export const LogSlipBody = zod.object({
+  "minutes": zod.number().int().min(1).max(logSlipBodyMinutesMax).describe('How many minutes were lost.'),
+  "note": zod.string().optional().describe('Optional factual description of what happened.'),
+  "goalId": zod.number().int().nullish()
+})
+
+
+
+
+
+export const LogSlipResponse = zod.object({
+  "minutes": zod.number().int(),
+  "failureEvent": zod.object({
+  "id": zod.number().int(),
+  "goalId": zod.number().int().nullable(),
+  "type": zod.enum(['check_in', 'failure', 'consequence_issued', 'consequence_done', 'note', 'escalation_sent']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),
+  "consequenceEvent": zod.object({
+  "id": zod.number().int(),
+  "goalId": zod.number().int().nullable(),
+  "type": zod.enum(['check_in', 'failure', 'consequence_issued', 'consequence_done', 'note', 'escalation_sent']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),
+  "tier": zod.union([zod.object({
+  "slipMinutes": zod.number().int().min(1).describe('Smallest slip duration, in minutes, that this rung applies to.'),
+  "consequence": zod.string().min(1)
+}).describe('One rung of the predefined consequence ladder, keyed to how long the slip lasted.'),zod.null()])
+})
+
+
+/**
  * @summary Get the predefined consequence ladder
  */
+
+
+
+
 export const GetLadderResponse = zod.object({
-  "tiers": zod.array(zod.string())
+  "tiers": zod.array(zod.object({
+  "slipMinutes": zod.number().int().min(1).describe('Smallest slip duration, in minutes, that this rung applies to.'),
+  "consequence": zod.string().min(1)
+}).describe('One rung of the predefined consequence ladder, keyed to how long the slip lasted.'))
 })
 
 
@@ -255,12 +306,38 @@ export const GetLadderResponse = zod.object({
 
 
 
+
 export const UpdateLadderBody = zod.object({
-  "tiers": zod.array(zod.string().min(1)).min(1)
+  "tiers": zod.array(zod.object({
+  "slipMinutes": zod.number().int().min(1).describe('Smallest slip duration, in minutes, that this rung applies to.'),
+  "consequence": zod.string().min(1)
+}).describe('One rung of the predefined consequence ladder, keyed to how long the slip lasted.')).min(1)
 })
 
+
+
+
+
 export const UpdateLadderResponse = zod.object({
-  "tiers": zod.array(zod.string())
+  "tiers": zod.array(zod.object({
+  "slipMinutes": zod.number().int().min(1).describe('Smallest slip duration, in minutes, that this rung applies to.'),
+  "consequence": zod.string().min(1)
+}).describe('One rung of the predefined consequence ladder, keyed to how long the slip lasted.'))
+})
+
+
+/**
+ * @summary Send a test SMS or call to the configured user phone
+ */
+export const SendTestMessageBody = zod.object({
+  "channel": zod.enum(['sms', 'call']),
+  "to": zod.string().optional().describe('Override the destination. Defaults to ACCOUNTABILITY_USER_PHONE.')
+})
+
+export const SendTestMessageResponse = zod.object({
+  "delivered": zod.boolean(),
+  "mode": zod.string().describe('Which delivery path was used'),
+  "detail": zod.string()
 })
 
 
@@ -315,10 +392,16 @@ export const ConfirmContactResponse = zod.object({
  * @summary Send a message to the accountability partner
  */
 
+export const sendChatMessageBodyHistoryMax = 20;
+
 
 
 export const SendChatMessageBody = zod.object({
-  "message": zod.string().min(1)
+  "message": zod.string().min(1),
+  "history": zod.array(zod.object({
+  "role": zod.enum(['user', 'partner']),
+  "text": zod.string()
+})).max(sendChatMessageBodyHistoryMax).optional().describe('Recent turns of this conversation, oldest first, excluding the current message. Supplies conversational continuity only; stored goal and event state remains the source of truth for any fact.')
 })
 
 export const SendChatMessageResponse = zod.object({

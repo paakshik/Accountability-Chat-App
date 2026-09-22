@@ -5,8 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Event } from './event';
 import type { LadderTier } from './ladderTier';
 
-export interface Ladder {
-  tiers: LadderTier[];
+export interface SlipResult {
+  minutes: number;
+  failureEvent: Event;
+  consequenceEvent: Event;
+  tier: LadderTier | null;
 }

@@ -7,6 +7,13 @@
  */
 export interface HealthStatus {
   status: string;
+  /** ok, or a description of why the store is unusable */
+  database: string;
+  /** Server local time the scheduler compares check-in times against */
+  time: string;
+  timezone: string;
+  /** Which Twilio delivery path is configured, or why none is */
+  outboundMessaging: string;
 }
 
 export interface Error {
@@ -102,16 +109,67 @@ export interface EventInput {
   content: string;
 }
 
+/**
+ * One rung of the predefined consequence ladder, keyed to how long the slip lasted.
+ */
+export interface LadderTier {
+  /**
+     * Smallest slip duration, in minutes, that this rung applies to.
+     * @minimum 1
+     */
+  slipMinutes: number;
+  /** @minLength 1 */
+  consequence: string;
+}
+
 export interface Ladder {
-  tiers: string[];
+  tiers: LadderTier[];
 }
 
 export interface LadderInput {
+  /** @minItems 1 */
+  tiers: LadderTier[];
+}
+
+export type TestMessageInputChannel = typeof TestMessageInputChannel[keyof typeof TestMessageInputChannel];
+
+
+export const TestMessageInputChannel = {
+  sms: 'sms',
+  call: 'call',
+} as const;
+
+export interface TestMessageInput {
+  channel: TestMessageInputChannel;
+  /** Override the destination. Defaults to ACCOUNTABILITY_USER_PHONE. */
+  to?: string;
+}
+
+export interface TestMessageResult {
+  delivered: boolean;
+  /** Which delivery path was used */
+  mode: string;
+  detail: string;
+}
+
+export interface SlipInput {
   /**
-     * @minItems 1
-     * @items.minLength 1
+     * How many minutes were lost.
+     * @minimum 1
+     * @maximum 1440
      */
-  tiers: string[];
+  minutes: number;
+  /** Optional factual description of what happened. */
+  note?: string;
+  /** @nullable */
+  goalId?: number | null;
+}
+
+export interface SlipResult {
+  minutes: number;
+  failureEvent: Event;
+  consequenceEvent: Event;
+  tier: LadderTier | null;
 }
 
 export interface Contact {
@@ -140,9 +198,27 @@ export interface Dashboard {
   recentEvents: Event[];
 }
 
+export type ChatTurnRole = typeof ChatTurnRole[keyof typeof ChatTurnRole];
+
+
+export const ChatTurnRole = {
+  user: 'user',
+  partner: 'partner',
+} as const;
+
+export interface ChatTurn {
+  role: ChatTurnRole;
+  text: string;
+}
+
 export interface ChatInput {
   /** @minLength 1 */
   message: string;
+  /**
+     * Recent turns of this conversation, oldest first, excluding the current message. Supplies conversational continuity only; stored goal and event state remains the source of truth for any fact.
+     * @maxItems 20
+     */
+  history?: ChatTurn[];
 }
 
 export interface ChatResponse {

@@ -8,6 +8,8 @@
 
 export * from './chatInput';
 export * from './chatResponse';
+export * from './chatTurn';
+export * from './chatTurnRole';
 export * from './contact';
 export * from './contactInput';
 export * from './dashboard';
@@ -23,5 +25,11 @@ export * from './goalUpdate';
 export * from './healthStatus';
 export * from './ladder';
 export * from './ladderInput';
+export * from './ladderTier';
 export * from './listEventsParams';
 export * from './notFoundResponse';
+export * from './slipInput';
+export * from './slipResult';
+export * from './testMessageInput';
+export * from './testMessageInputChannel';
+export * from './testMessageResult';

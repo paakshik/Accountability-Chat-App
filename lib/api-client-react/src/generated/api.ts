@@ -35,7 +35,11 @@ import type {
   Ladder,
   LadderInput,
   ListEventsParams,
-  NotFoundResponse
+  NotFoundResponse,
+  SlipInput,
+  SlipResult,
+  TestMessageInput,
+  TestMessageResult
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -945,6 +949,94 @@ export const useCreateEvent = <TError = ErrorType<unknown>,
       return useMutation(getCreateEventMutationOptions(options));
     }
 
+export const getLogSlipUrl = () => {
+
+
+
+
+  return `/api/slips`
+}
+
+/**
+ * @summary Record a time slip and issue its predefined consequence
+ */
+export const logSlip = async (slipInput: SlipInput, options?: Parameters<typeof customFetch>[1]): Promise<SlipResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SlipResult>(getLogSlipUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(slipInput)
+  }
+);}
+
+
+
+
+
+export const getLogSlipMutationKey = () => ['logSlip'] as const;
+
+export const getLogSlipMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logSlip>>, TError,LogSlipMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logSlip>>, TError,LogSlipMutationVariables, TContext> => {
+
+const mutationKey = getLogSlipMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logSlip>>, LogSlipMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  logSlip(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogSlipMutationResult = NonNullable<Awaited<ReturnType<typeof logSlip>>>
+    export type LogSlipMutationBody = BodyType<SlipInput>
+    export type LogSlipMutationError = ErrorType<unknown>
+    export type LogSlipMutationVariables = {data: BodyType<SlipInput>}
+
+    /**
+ * @summary Record a time slip and issue its predefined consequence
+ */
+export const useLogSlip = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logSlip>>, TError,LogSlipMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logSlip>>,
+        TError,
+        LogSlipMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLogSlipMutationOptions(options));
+    }
+
 export const getGetLadderUrl = () => {
 
 
@@ -1108,6 +1200,94 @@ export const useUpdateLadder = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateLadderMutationOptions(options));
+    }
+
+export const getSendTestMessageUrl = () => {
+
+
+
+
+  return `/api/selftest/message`
+}
+
+/**
+ * @summary Send a test SMS or call to the configured user phone
+ */
+export const sendTestMessage = async (testMessageInput: TestMessageInput, options?: Parameters<typeof customFetch>[1]): Promise<TestMessageResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TestMessageResult>(getSendTestMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(testMessageInput)
+  }
+);}
+
+
+
+
+
+export const getSendTestMessageMutationKey = () => ['sendTestMessage'] as const;
+
+export const getSendTestMessageMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestMessage>>, TError,SendTestMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendTestMessage>>, TError,SendTestMessageMutationVariables, TContext> => {
+
+const mutationKey = getSendTestMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendTestMessage>>, SendTestMessageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  sendTestMessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendTestMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendTestMessage>>>
+    export type SendTestMessageMutationBody = BodyType<TestMessageInput>
+    export type SendTestMessageMutationError = ErrorType<Error>
+    export type SendTestMessageMutationVariables = {data: BodyType<TestMessageInput>}
+
+    /**
+ * @summary Send a test SMS or call to the configured user phone
+ */
+export const useSendTestMessage = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestMessage>>, TError,SendTestMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendTestMessage>>,
+        TError,
+        SendTestMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSendTestMessageMutationOptions(options));
     }
 
 export const getGetContactUrl = () => {

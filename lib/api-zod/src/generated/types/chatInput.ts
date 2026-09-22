@@ -5,8 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatTurn } from './chatTurn';
 
 export interface ChatInput {
   /** @minLength 1 */
   message: string;
+  /**
+     * Recent turns of this conversation, oldest first, excluding the current message. Supplies conversational continuity only; stored goal and event state remains the source of truth for any fact.
+     * @maxItems 20
+     */
+  history?: ChatTurn[];
 }

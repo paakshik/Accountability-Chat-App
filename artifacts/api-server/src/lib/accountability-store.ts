@@ -76,12 +76,38 @@ sqlite.exec(`
   );
 `);
 
+export type LadderTier = {
+  /** Smallest slip duration, in minutes, this rung applies to. */
+  slipMinutes: number;
+  consequence: string;
+};
+
 const ladderFile = path.join(dataDir, "ladder.json");
-const defaultLadder = [
-  "Tier 1 — Log the miss and complete the next check-in.",
-  "Tier 2 — Complete the predefined repair action.",
-  "Tier 3 — Notify the agreed accountability contact.",
+
+/**
+ * Seeded rungs. Deliberately restriction-based — they cost something real and are
+ * enforceable without causing injury. Edit them in Settings to match your own ladder.
+ */
+const defaultLadder: LadderTier[] = [
+  { slipMinutes: 1, consequence: "Phone goes in the bag, zip closed. 10-minute silent reset posture." },
+  { slipMinutes: 5, consequence: "No music for the next 6 hours — study and work in silence." },
+  { slipMinutes: 15, consequence: "No canteen meal the next morning." },
 ];
+
+function isLadderTier(value: unknown): value is LadderTier {
+  if (!value || typeof value !== "object") return false;
+  const tier = value as Record<string, unknown>;
+  return (
+    typeof tier.slipMinutes === "number" &&
+    Number.isFinite(tier.slipMinutes) &&
+    tier.slipMinutes >= 1 &&
+    typeof tier.consequence === "string" &&
+    tier.consequence.trim().length > 0
+  );
+}
+
+const sortTiers = (tiers: LadderTier[]): LadderTier[] =>
+  [...tiers].sort((a, b) => a.slipMinutes - b.slipMinutes);
 
 if (!existsSync(ladderFile)) {
   writeFileSync(ladderFile, JSON.stringify(defaultLadder, null, 2));
@@ -150,6 +176,37 @@ function toEvent(row: Record<string, unknown>): Event {
     type: asString(row.type) as EventType,
     content: asString(row.content),
     createdAt: asString(row.created_at),
+  };
+}
+
+/**
+ * Round-trips a real query against every table the app writes to. A store that opened
+ * but is corrupt or missing a table only shows up when something tries to use it, so
+ * the health endpoint exercises it rather than assuming the handle means it works.
+ */
+export function checkDatabase(): string {
+  try {
+    const integrity = sqlite.prepare("PRAGMA integrity_check").get() as Record<string, unknown>;
+    const verdict = String(Object.values(integrity)[0] ?? "");
+    if (verdict !== "ok") return `integrity_check: ${verdict}`;
+
+    for (const table of ["goals", "events", "accountability_contact"]) {
+      sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get();
+    }
+    // The ladder lives beside the database as JSON; an unreadable one is just as fatal.
+    if (getLadder().length === 0) return "consequence ladder is empty or unreadable";
+    return "ok";
+  } catch (err: unknown) {
+    return err instanceof Error ? err.message : "unknown database error";
+  }
+}
+
+/** The clock the scheduler compares `HH:mm` check-in times against. */
+export function localTimeInfo(): { time: string; timezone: string } {
+  const now = new Date();
+  return {
+    time: now.toString(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "unknown",
   };
 }
 
@@ -246,12 +303,29 @@ export function getEvents(limit = 30): Event[] {
   ).map(toEvent);
 }
 
+/**
+ * Events that count toward `goalId` since `since`.
+ *
+ * Includes events with no goal id: the daily check-in submitted from the app is one
+ * submission that covers the day's goals (product spec section 6), so it is stored
+ * unattached and has to satisfy every scheduled goal — otherwise the scheduler would
+ * keep escalating goals the user has already checked in for.
+ */
 export function getEventsForGoalSince(goalId: number, since: string): Event[] {
   return (
     sqlite
-      .prepare("SELECT * FROM events WHERE goal_id = ? AND created_at >= ? ORDER BY datetime(created_at) ASC, id ASC")
+      .prepare(
+        "SELECT * FROM events WHERE (goal_id = ? OR goal_id IS NULL) AND created_at >= ? ORDER BY datetime(created_at) ASC, id ASC",
+      )
       .all(goalId, since) as Record<string, unknown>[]
   ).map(toEvent);
+}
+
+export function countEventsSince(type: EventType, since: string): number {
+  const row = sqlite
+    .prepare("SELECT COUNT(*) AS count FROM events WHERE type = ? AND created_at >= ?")
+    .get(type, since) as { count: number };
+  return Number(row.count);
 }
 
 export function createEvent(input: { goalId?: number | null; type: EventType; content: string }): Event {
@@ -287,40 +361,145 @@ export function updateContact(input: { name: string; phoneNumber: string; email?
   return getContact();
 }
 
-export function confirmContact(): Contact {
-  sqlite
+/**
+ * Returns null when no contact has been saved yet. Consent gates every outbound
+ * escalation, so confirming a contact that does not exist must fail loudly rather
+ * than report success for a row that was never written.
+ */
+export function confirmContact(): Contact | null {
+  const result = sqlite
     .prepare("UPDATE accountability_contact SET consent_confirmed_at = ? WHERE id = 1")
     .run(new Date().toISOString());
+  if (Number(result.changes) === 0) return null;
   return getContact();
 }
 
-export function getLadder(): string[] {
+export function getLadder(): LadderTier[] {
   try {
     const parsed: unknown = JSON.parse(readFileSync(ladderFile, "utf8"));
-    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : defaultLadder;
+    if (!Array.isArray(parsed)) return defaultLadder;
+
+    if (parsed.every(isLadderTier)) return sortTiers(parsed);
+
+    // Migrate the original format, an ordered array of plain strings with no duration
+    // attached. Spacing is a guess, so it is written back for the user to correct.
+    if (parsed.every((item) => typeof item === "string")) {
+      const migrated = (parsed as string[]).map((consequence, index) => ({
+        slipMinutes: [1, 5, 15, 30, 60, 120][index] ?? (index + 1) * 60,
+        consequence,
+      }));
+      writeFileSync(ladderFile, JSON.stringify(migrated, null, 2));
+      return sortTiers(migrated);
+    }
+
+    return defaultLadder;
   } catch {
     return defaultLadder;
   }
 }
 
-export function updateLadder(tiers: string[]): string[] {
-  writeFileSync(ladderFile, JSON.stringify(tiers, null, 2));
-  return tiers;
+export function updateLadder(tiers: LadderTier[]): LadderTier[] {
+  const sorted = sortTiers(tiers);
+  writeFileSync(ladderFile, JSON.stringify(sorted, null, 2));
+  return sorted;
+}
+
+/**
+ * Backstop for ladder rungs that describe injuring yourself or a clear health hazard.
+ *
+ * The ladder is free text the user controls, and the rest of this system is built to
+ * issue whatever it says on a timer, with no appeal. That is the right design for "no
+ * canteen meal" and the wrong one for "hit yourself with a belt", so issuing is gated
+ * here — the single choke point every path goes through (API, chat tool, scheduler)
+ * rather than in a prompt, which can be argued with.
+ *
+ * Intentionally narrow and keyword-based: it is a guard against the specific failure of
+ * automating self-harm, not a general classifier. A flagged rung is never issued and is
+ * never handed to the model to repeat; the slip itself is still recorded in full.
+ */
+const INJURIOUS_PATTERNS: RegExp[] = [
+  /\b(?:hit|punch|slap|beat|whip|strike|burn|cut|stab|choke|strangle|bruise)\b[^.]{0,40}(?:yourself|your\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?)|my\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?))\b/i,
+  /\b(?:belt|cane|whip|blade|razor|knife|lighter)\b[^.]{0,30}(?:yourself|your\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?)|my\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?))\b/i,
+  /(?:yourself|your\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?)|my\s+(?:head|hands?|face|arms?|legs?|body|balls|testicles|groin|genitals|skin|thighs?|chest|stomach|wrists?|knuckles?))[^.]{0,30}\b(?:with\s+a\s+)?(?:belt|cane|whip|blade|razor|knife|lighter)\b/i,
+  /\b(?:squeeze|grab|crush|twist|kick)\b[^.]{0,30}\b(?:balls|testicles|groin|genitals)\b/i,
+  /\b(?:lick|drink|swallow|eat)\b[^.]{0,40}\b(?:urinal|toilet|piss|urine|vomit|sewage|drain|feces|faeces|poop|shit)\b/i,
+  /\b(?:head|face|mouth|tongue|nose)\b[^.]{0,30}\b(?:urinal|toilet|poop|feces|faeces|sewage)\b/i,
+  /\b(?:starve\s+(?:yourself|myself)|self.?harm|hurt\s+(?:yourself|myself)|injure\s+(?:yourself|myself)|harm\s+(?:yourself|myself))\b/i,
+];
+
+export function isInjuriousConsequence(text: string): boolean {
+  return INJURIOUS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export const WITHHELD_CONSEQUENCE_NOTE =
+  "A ladder rung applied, but it describes physical harm, so it was not issued. Replace it in Settings with a consequence that costs you something without injuring you.";
+
+/**
+ * The rung that applies to a slip of `minutes`: the highest rung whose threshold has
+ * been reached. Returns null when the slip is shorter than every configured rung.
+ */
+export function tierForSlip(minutes: number): LadderTier | null {
+  const applicable = getLadder().filter((tier) => tier.slipMinutes <= minutes);
+  return applicable.length > 0 ? applicable[applicable.length - 1]! : null;
+}
+
+/**
+ * Records a slip as two rows: the factual failure, and the consequence it triggers.
+ * The consequence text is copied from the ladder — never composed here — so the system
+ * can only ever point at something that was decided in advance.
+ */
+export function logSlip(input: { minutes: number; note?: string | null; goalId?: number | null }) {
+  const goalId = input.goalId ?? null;
+  const note = input.note?.trim();
+  const tier = tierForSlip(input.minutes);
+
+  const failureEvent = createEvent({
+    goalId,
+    type: "failure",
+    content: note
+      ? `Reported slip of ${input.minutes} minute(s): ${note}`
+      : `Reported slip of ${input.minutes} minute(s).`,
+  });
+
+  const withheld = tier !== null && isInjuriousConsequence(tier.consequence);
+
+  const consequenceEvent = createEvent({
+    goalId,
+    type: "consequence_issued",
+    content: !tier
+      ? `Slip of ${input.minutes} min is below every configured ladder rung. No consequence applies.`
+      : withheld
+        ? `Slip of ${input.minutes} min reaches the ${tier.slipMinutes} min rung. ${WITHHELD_CONSEQUENCE_NOTE}`
+        : `Slip of ${input.minutes} min reaches the ${tier.slipMinutes} min rung: ${tier.consequence}`,
+  });
+
+  // A withheld rung is reported as null so no caller — including the model — ever
+  // receives the text to repeat back.
+  return { minutes: input.minutes, failureEvent, consequenceEvent, tier: withheld ? null : tier, withheld };
 }
 
 export function getDashboard() {
   const goals = getGoals();
-  const today = new Date().toISOString().slice(0, 10);
-  const recentEvents = getEvents(6);
+  const now = new Date();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const since = dayStart.toISOString();
+  const nowTime = now.toTimeString().slice(0, 5);
+  const checkInsToday = countEventsSince("check_in", since);
+
   return {
     activeGoals: goals.filter((goal) => ["active", "locked"].includes(goal.status)).length,
     proposedGoals: goals.filter((goal) => goal.status === "proposed").length,
+    // A goal is only overdue if its check-in time has passed AND nothing was logged
+    // for it today — otherwise every held commitment reads as overdue all evening.
     overdueGoals: goals.filter(
-      (goal) => goal.status === "active" && goal.checkInTime && goal.checkInTime < new Date().toTimeString().slice(0, 5),
+      (goal) =>
+        ["active", "locked"].includes(goal.status) &&
+        goal.checkInTime !== null &&
+        goal.checkInTime <= nowTime &&
+        !getEventsForGoalSince(goal.id, since).some((event) => event.type === "check_in"),
     ).length,
-    checkInsToday: recentEvents.filter(
-      (event) => event.type === "check_in" && event.createdAt.startsWith(today),
-    ).length,
-    recentEvents,
+    checkInsToday,
+    recentEvents: getEvents(6),
   };
 }

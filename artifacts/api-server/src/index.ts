@@ -2,17 +2,18 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startScheduler } from "./lib/scheduler";
 
-const rawPort = process.env["PORT"];
+// Replit's artifact runner injects PORT per service (see .replit-artifact/artifact.toml).
+// Outside it — local dev, tests, a plain `node dist/index.mjs` — fall back to the same
+// port the artifact config uses so the app boots without extra setup.
+//
+// API_PORT takes precedence so one variable moves both this server and the web app's
+// dev proxy; a bare PORT would otherwise collide when both halves run from one shell.
+const DEFAULT_PORT = 8080;
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+const rawPort = process.env["API_PORT"] ?? process.env["PORT"];
+const port = rawPort ? Number(rawPort) : DEFAULT_PORT;
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
+if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 

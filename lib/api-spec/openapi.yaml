@@ -206,6 +206,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Event"
+  /slips:
+    post:
+      operationId: logSlip
+      tags: [events]
+      summary: Record a time slip and issue its predefined consequence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SlipInput"
+      responses:
+        "201":
+          description: Slip recorded with the applicable ladder rung
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlipResult"
   /ladder:
     get:
       operationId: getLadder
@@ -235,6 +253,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Ladder"
+  /selftest/message:
+    post:
+      operationId: sendTestMessage
+      tags: [settings]
+      summary: Send a test SMS or call to the configured user phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestMessageInput"
+      responses:
+        "200":
+          description: Delivery attempt result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestMessageResult"
+        "503":
+          description: Outbound messaging is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /contact:
     get:
       operationId: getContact
@@ -319,11 +361,26 @@ components:
   schemas:
     HealthStatus:
       type: object
+      required:
+        - status
+        - database
+        - time
+        - timezone
+        - outboundMessaging
       properties:
         status:
           type: string
-      required:
-        - status
+        database:
+          type: string
+          description: "ok, or a description of why the store is unusable"
+        time:
+          type: string
+          description: Server local time the scheduler compares check-in times against
+        timezone:
+          type: string
+        outboundMessaging:
+          type: string
+          description: Which Twilio delivery path is configured, or why none is
     Error:
       type: object
       required: [error]
@@ -380,13 +437,25 @@ components:
           type: string
           enum: [check_in, failure, consequence_issued, consequence_done, note, escalation_sent]
         content: { type: string, minLength: 1 }
+    LadderTier:
+      type: object
+      description: One rung of the predefined consequence ladder, keyed to how long the slip lasted.
+      required: [slipMinutes, consequence]
+      properties:
+        slipMinutes:
+          type: integer
+          minimum: 1
+          description: Smallest slip duration, in minutes, that this rung applies to.
+        consequence:
+          type: string
+          minLength: 1
     Ladder:
       type: object
       required: [tiers]
       properties:
         tiers:
           type: array
-          items: { type: string }
+          items: { $ref: "#/components/schemas/LadderTier" }
     LadderInput:
       type: object
       required: [tiers]
@@ -394,7 +463,51 @@ components:
         tiers:
           type: array
           minItems: 1
-          items: { type: string, minLength: 1 }
+          items: { $ref: "#/components/schemas/LadderTier" }
+    TestMessageInput:
+      type: object
+      required: [channel]
+      properties:
+        channel:
+          type: string
+          enum: [sms, call]
+        to:
+          type: string
+          description: Override the destination. Defaults to ACCOUNTABILITY_USER_PHONE.
+    TestMessageResult:
+      type: object
+      required: [delivered, mode, detail]
+      properties:
+        delivered: { type: boolean }
+        mode:
+          type: string
+          description: Which delivery path was used
+        detail: { type: string }
+    SlipInput:
+      type: object
+      required: [minutes]
+      properties:
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: How many minutes were lost.
+        note:
+          type: string
+          description: Optional factual description of what happened.
+        goalId:
+          type: ["integer", "null"]
+    SlipResult:
+      type: object
+      required: [minutes, failureEvent, consequenceEvent, tier]
+      properties:
+        minutes: { type: integer }
+        failureEvent: { $ref: "#/components/schemas/Event" }
+        consequenceEvent: { $ref: "#/components/schemas/Event" }
+        tier:
+          oneOf:
+            - $ref: "#/components/schemas/LadderTier"
+            - type: "null"
     Contact:
       type: object
       required: [id, name, phoneNumber, email, consentConfirmedAt]
@@ -422,11 +535,27 @@ components:
         recentEvents:
           type: array
           items: { $ref: "#/components/schemas/Event" }
+    ChatTurn:
+      type: object
+      required: [role, text]
+      properties:
+        role:
+          type: string
+          enum: [user, partner]
+        text: { type: string }
     ChatInput:
       type: object
       required: [message]
       properties:
         message: { type: string, minLength: 1 }
+        history:
+          type: array
+          maxItems: 20
+          description: >-
+            Recent turns of this conversation, oldest first, excluding the current
+            message. Supplies conversational continuity only; stored goal and event
+            state remains the source of truth for any fact.
+          items: { $ref: "#/components/schemas/ChatTurn" }
     ChatResponse:
       type: object
       required: [message, providerConfigured]
