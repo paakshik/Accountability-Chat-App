@@ -240,6 +240,14 @@ export function getEvents(limit = 30): Event[] {
   ).map(toEvent);
 }
 
+export function getEventsForGoalSince(goalId: number, since: string): Event[] {
+  return (
+    sqlite
+      .prepare("SELECT * FROM events WHERE goal_id = ? AND created_at >= ? ORDER BY datetime(created_at) ASC, id ASC")
+      .all(goalId, since) as Record<string, unknown>[]
+  ).map(toEvent);
+}
+
 export function createEvent(input: { goalId?: number | null; type: EventType; content: string }): Event {
   const createdAt = new Date().toISOString();
   const result = sqlite
