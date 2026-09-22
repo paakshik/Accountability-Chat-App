@@ -124,31 +124,35 @@ router.post("/contact/confirm", (_req, res) => res.json(ConfirmContactResponse.p
 
 router.post("/chat", async (req, res) => {
   const input = SendChatMessageBody.parse(req.body);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: "LLM provider is not configured. Add ANTHROPIC_API_KEY to enable chat." });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "LLM provider is not configured. Add GEMINI_API_KEY to enable chat." });
 
   const context = JSON.stringify({ goals: getGoals(), recentEvents: getEvents(40), ladder: getLadder() });
   const system = `You are an external accountability partner, not a motivational assistant. Be factual, short, and humane. The database state below is the source of truth. You cannot change goal status, cancel escalations, invent consequences, or claim self-reports are independently verified. If asked to soften an active goal, point to the 24-hour amendment flow. When a goal fails, reference the applicable predefined ladder tier. Never use shame, humiliation, or catastrophizing. Keep responses short. Current state: ${context}`;
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      system,
-      messages: [{ role: "user", content: input.message }],
-    }),
-  });
-  if (!response.ok) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts: [{ text: input.message }] }],
+          generationConfig: { maxOutputTokens: 8192 },
+        }),
+      },
+    );
+    if (!response.ok) {
+      return res.status(503).json({ error: "The accountability partner is unavailable right now." });
+    }
+    const payload = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const message = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") || "No response was returned.";
+    return res.json(SendChatMessageResponse.parse({ message, providerConfigured: true }));
+  } catch {
     return res.status(503).json({ error: "The accountability partner is unavailable right now." });
   }
-  const payload = (await response.json()) as { content?: Array<{ type: string; text?: string }> };
-  const message = payload.content?.find((block) => block.type === "text")?.text ?? "No response was returned.";
-  return res.json(SendChatMessageResponse.parse({ message, providerConfigured: true }));
 });
 
 export default router;

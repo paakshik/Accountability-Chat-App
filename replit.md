@@ -9,7 +9,7 @@ A private accountability partner that keeps a factual record of commitments, che
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- Required for live chat: `ANTHROPIC_API_KEY` (stored as a secret)
+- Required for live chat: `GEMINI_API_KEY` (stored as a secret)
 - Required for Twilio delivery: `TWILIO_FROM_NUMBER`, `ACCOUNTABILITY_USER_PHONE`
 - Optional: `ACCOUNTABILITY_USE_CALLS=true` switches reminders from SMS to calls
 
@@ -37,7 +37,7 @@ A private accountability partner that keeps a factual record of commitments, che
 - Active goals are server-locked; amendments create a 24-hour edit window and the chatbot cannot bypass it.
 - The app stores check-in times as `HH:mm` strings so seeded and newly created goals use the same scheduler format.
 - Twilio integration is connected through the Replit connector SDK; outbound contact messages require explicit contact consent.
-- Chat fails explicitly with HTTP 503 when `ANTHROPIC_API_KEY` is absent instead of returning a fabricated response.
+- Chat uses Google Gemini 2.5 Flash and fails explicitly with HTTP 503 when `GEMINI_API_KEY` is absent instead of returning a fabricated response.
 
 ## Product
 
