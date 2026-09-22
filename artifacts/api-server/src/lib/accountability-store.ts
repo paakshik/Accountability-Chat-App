@@ -336,6 +336,47 @@ export function countEventsSince(type: EventType, since: string): number {
   return Number(row.count);
 }
 
+/**
+ * Has `goal` been checked in for today?
+ *
+ * A check-in logged from the app carries no goal id, because one submission is meant to
+ * cover the day's commitments. With every goal sharing a single deadline that was just
+ * "any check-in counts". With staggered checkpoints it cannot be: a 13:00 check-in must
+ * not silence the 18:00 one.
+ *
+ * So an unattached check-in counts for a goal only if it was logged at or after that
+ * goal's own check-in time — i.e. it is plausibly a response to that checkpoint, not a
+ * pre-emptive answer to a deadline that has not arrived. A check-in explicitly tagged
+ * with the goal id always counts.
+ */
+export function hasCheckInForGoal(goal: Goal, now: Date = new Date()): boolean {
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const sinceIso = dayStart.toISOString();
+
+  const checkInMinutes = (() => {
+    if (!goal.checkInTime) return null;
+    const match = /^(\d{2}):(\d{2})$/.exec(goal.checkInTime);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  })();
+
+  const deadlineIso =
+    checkInMinutes === null
+      ? sinceIso
+      : new Date(dayStart.getTime() + checkInMinutes * 60_000).toISOString();
+
+  const row = sqlite
+    .prepare(
+      `SELECT COUNT(*) AS count FROM events
+       WHERE type = 'check_in'
+         AND created_at >= ?
+         AND (goal_id = ? OR (goal_id IS NULL AND created_at >= ?))`,
+    )
+    .get(sinceIso, goal.id, deadlineIso) as { count: number };
+
+  return Number(row.count) > 0;
+}
+
 export function createEvent(input: { goalId?: number | null; type: EventType; content: string }): Event {
   const createdAt = new Date().toISOString();
   const result = sqlite
@@ -561,7 +602,7 @@ export function getDashboard() {
         ["active", "locked"].includes(goal.status) &&
         goal.checkInTime !== null &&
         goal.checkInTime <= nowTime &&
-        !getEventsForGoalSince(goal.id, since).some((event) => event.type === "check_in"),
+        !hasCheckInForGoal(goal, now),
     ).length,
     checkInsToday,
     recentEvents: getEvents(6),

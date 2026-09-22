@@ -2,7 +2,7 @@ import { logger } from "./logger";
 import {
   createEvent,
   getContact,
-  getEventsForGoalSince,
+  hasCheckInForGoal,
   getGoals,
   getLadder,
   getSchedulerState,
@@ -62,12 +62,9 @@ export async function runSchedulerTick() {
       continue;
     }
 
-    // A check-in logged from the app carries no goal id (one submission covers the
-    // day's goals, per the product spec), so a null goalId counts for every goal.
-    const responded = getEventsForGoalSince(goal.id, sinceIso).some(
-      (event) => event.type === "check_in",
-    );
-    if (responded) continue;
+    // Shared with the dashboard so the UI and the scheduler never disagree about
+    // whether a checkpoint has been answered.
+    if (hasCheckInForGoal(goal, now)) continue;
 
     // `>=` rather than `===`: a tick can land a minute late, or the process can start
     // after the check-in time, and the reminder must still go out that day.
