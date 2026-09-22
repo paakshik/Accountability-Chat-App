@@ -67,6 +67,14 @@ sqlite.exec(`
     created_at TEXT NOT NULL,
     FOREIGN KEY (goal_id) REFERENCES goals(id)
   );
+  CREATE TABLE IF NOT EXISTS scheduler_state (
+    goal_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    reminded_at TEXT,
+    followed_up_at TEXT,
+    failed_at TEXT,
+    PRIMARY KEY (goal_id, day)
+  );
   CREATE TABLE IF NOT EXISTS accountability_contact (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     name TEXT NOT NULL,
@@ -476,6 +484,62 @@ export function logSlip(input: { minutes: number; note?: string | null; goalId?:
   // A withheld rung is reported as null so no caller — including the model — ever
   // receives the text to repeat back.
   return { minutes: input.minutes, failureEvent, consequenceEvent, tier: withheld ? null : tier, withheld };
+}
+
+export type SchedulerState = {
+  remindedAt: string | null;
+  followedUpAt: string | null;
+  failedAt: string | null;
+};
+
+/**
+ * What the scheduler has already done for a goal on a given local day.
+ *
+ * This lives in the database rather than in process memory on purpose: the delivery
+ * flags are the only thing stopping a restart from re-texting you for a check-in it
+ * already chased. An in-memory map loses them on every restart, and on a serverless
+ * host it would lose them on every single tick.
+ */
+export function getSchedulerState(goalId: number, day: string): SchedulerState {
+  const row = sqlite
+    .prepare("SELECT * FROM scheduler_state WHERE goal_id = ? AND day = ?")
+    .get(goalId, day) as Record<string, unknown> | undefined;
+  return {
+    remindedAt: row ? asNullableString(row.reminded_at) : null,
+    followedUpAt: row ? asNullableString(row.followed_up_at) : null,
+    failedAt: row ? asNullableString(row.failed_at) : null,
+  };
+}
+
+const SCHEDULER_COLUMNS = {
+  remindedAt: "reminded_at",
+  followedUpAt: "followed_up_at",
+  failedAt: "failed_at",
+} as const;
+
+export function markSchedulerState(
+  goalId: number,
+  day: string,
+  fields: Partial<Record<keyof typeof SCHEDULER_COLUMNS, boolean>>,
+): void {
+  const now = new Date().toISOString();
+  const columns = (Object.keys(fields) as (keyof typeof SCHEDULER_COLUMNS)[]).filter(
+    (key) => fields[key],
+  );
+  if (columns.length === 0) return;
+
+  sqlite
+    .prepare("INSERT OR IGNORE INTO scheduler_state (goal_id, day) VALUES (?, ?)")
+    .run(goalId, day);
+  const assignments = columns.map((key) => `${SCHEDULER_COLUMNS[key]} = ?`).join(", ");
+  sqlite
+    .prepare(`UPDATE scheduler_state SET ${assignments} WHERE goal_id = ? AND day = ?`)
+    .run(...columns.map(() => now), goalId, day);
+}
+
+/** Keep the table from growing without bound; nothing reads past days. */
+export function pruneSchedulerState(beforeDay: string): void {
+  sqlite.prepare("DELETE FROM scheduler_state WHERE day < ?").run(beforeDay);
 }
 
 export function getDashboard() {
