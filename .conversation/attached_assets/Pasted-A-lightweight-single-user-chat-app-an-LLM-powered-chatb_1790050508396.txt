@@ -1,0 +1,104 @@
+A lightweight, single-user chat app: an LLM-powered chatbot with persistent structured memory of commitments, acting as an external accountability partner — plus real SMS/call escalation, the way Overlord does it (it texts or calls you, and texts a designated contact if you go dark). No blocker integrations, no financial stakes, no appeals subsystem. Just chat + memory
+
+real outbound contact that fires whether or not you feel like cooperating.
+Cut on purpose: external verification integrations (screen-time/blocker logs), an appeals process, financial stakes. Consequences reference the user's own existing predefined punishment ladder rather than inventing new ones.
+
+Core constraint, unchanged: recognition of the wrong action does not reliably produce action against it. The system reduces how much momentary willingness is required — it does not depend on generating more of it. The SMS/call escalation is the sharpest version of that: it doesn't wait for you to open the app.
+
+1. Tech stack
+Frontend: single-page React chat UI
+Backend: FastAPI
+Storage: SQLite, one file, three small tables (below)
+Scheduler: APScheduler (or a simple background loop) — needed to fire check-in reminders and escalations on a timer, independent of the app being open
+SMS/voice: Twilio — texts and/or calls the user for check-ins, texts the designated contact on escalation. Setup note: this requires the user to create a Twilio account, buy a number, and set API keys as Replit secrets — it isn't something that works out of the box with no account.
+LLM: one API call per chat message to the Anthropic API (claude-sonnet-4-6), system prompt in Section 6. Current goal/event state is injected into context on every call — that's the "memory," not reliance on chat history, which can be edited or lost.
+No blocker integrations, no screen-time APIs, no financial/payment APIs.
+2. Data model (three tables)
+goals
+  id, name, success_condition, failure_condition,
+  status (proposed | active | locked | failed | completed),
+  created_at, locked_at, edit_unlock_at, check_in_time
+
+events
+  id, goal_id, type (check_in | failure | consequence_issued |
+  consequence_done | note | escalation_sent), content, created_at
+
+accountability_contact
+  id, name, phone_number, email, consent_confirmed_at
+Every meaningful thing — a check-in, a miss, a consequence logged as done, an escalation firing — is one row in events. The AI reads this table fresh every turn instead of trusting its own memory of the conversation. accountability_contact is a single row you fill in once, for someone who has actually agreed to get these messages.
+
+3. The one piece of real enforcement worth keeping
+This is the only mechanic here that isn't just a chatbot being well-behaved:
+
+A goal starts proposed — freely editable.
+Confirming it (explicit "yes, lock this in" step in the UI) sets status to active and stamps locked_at.
+The API endpoint for editing/deleting a goal checks status server-side: if active, the request is rejected unless edit_unlock_at has passed. Any amendment request sets edit_unlock_at to now + 24h.
+The chatbot has no tool that can change a goal's status. It can only log events and read state. If asked to cancel, pause, or soften an active goal, it says plainly that it can't, and points to the amendment flow and its 24h delay — it does not improvise an exception.
+Without this, the whole thing is just a nicely-worded chat window. With it, "I don't feel like it right now" has no interface to act through.
+
+4. SMS/call escalation
+This runs on the scheduler, not on the chat — it fires whether or not the app is open.
+
+At the goal's check_in_time, the scheduler sends a text (or triggers a call, if configured) to the user via Twilio: a short, factual prompt — "Check-in for [goal] is due."
+If there's no response within a grace window (e.g. 30 min), one automated follow-up text/call.
+If still no response by end of day, or the check-in itself reports a failure: the scheduler logs a failure event, logs a consequence_issued event referencing the applicable punishment-ladder tier, and — same pattern as Overlord's "text Jane if John's skipped his check-in" — sends a factual text to accountability_contact. No editorializing in that message, just what happened: goal name, that it was missed, the date.
+All of this writes to events, so the chat always has the real history even if the user never opens it that day.
+This is the one part of the system that genuinely doesn't depend on the user's cooperation at all — the text goes out on a timer regardless.
+
+5. Punishment ladder
+Store the user's existing predefined consequence tiers as a simple ordered config list (not hardcoded in the LLM prompt) — e.g. a small table or JSON array the user pastes their own tiers into once. When a goal fails, the app logs a consequence_issued event referencing the applicable tier from that list. The chatbot never invents a consequence — it only ever points to the tier that was already predefined.
+
+6. Three goals (seeded as proposed, not active until confirmed in-app)
+Goal 1 — Boundary Hold (recognizing wrong behavior but continuing)
+
+Success: stated boundary (e.g. a no-use window) holds for its full duration.
+Failure: boundary broken before the window ends.
+Verification: self-report — logged explicitly as self-report, not treated as independently verified, since this build has no external integration.
+Consequence: next applicable tier on the punishment ladder.
+Goal 2 — Check-In Completion (avoiding accountability/consequences)
+
+Success: responds to that day's check-in with an honest status before a self-set daily deadline.
+Failure: no response by deadline, or a non-answer.
+Verification: timestamp of response is objective; content is self-report.
+Consequence: next applicable tier on the ladder.
+Goal 3 — Structure Log (failing to maintain daily structure)
+
+Success: day's planned blocks logged as attempted.
+Failure: no log submitted for the day.
+Bundled into the same daily check-in as Goal 2 — one submission, not two.
+7. Chatbot system prompt
+You are an external accountability partner, not a motivational assistant.
+Your job is to hold a factual record and conduct check-ins — not to
+persuade, comfort, or negotiate.
+
+1. The database is the source of truth. Read goal and event state fresh
+   each turn — never rely on your memory of this conversation over what's
+   actually stored.
+2. You cannot change the status of an active or locked goal. If asked to
+   cancel, pause, or loosen one, say plainly that you can't, and point to
+   the amendment flow (24-hour cooldown) instead of agreeing or improvising.
+3. This build has no independent behavioral-verification integrations
+   (no blocker logs, no screen-time API). Never imply something is verified
+   when it's actually self-report — say so plainly.
+4. You do not send the SMS/call escalations yourself and cannot stop one
+   that the scheduler has already queued or sent. If asked to intercept or
+   cancel an escalation, say plainly that you can't.
+5. When a goal fails, state it plainly and reference the applicable
+   punishment-ladder tier. You are not deciding the consequence — it was
+   already decided when the ladder was written.
+6. No shame, humiliation, self-hatred framing, or catastrophizing. A missed
+   goal is reported the same way whether it's the first miss or the
+   fiftieth: as a fact in the log.
+7. A lapse is never permission to continue it. Redirect to logging the
+   consequence and moving to the next check-in — not to a conversation
+   about motivation or willpower.
+8. You don't know what you weren't given. If asked something you don't have
+   data for, say so instead of guessing.
+9. Keep responses short. This is a check-in, not a therapy session.
+8. Build order
+Three-table schema + goal CRUD with the propose → confirm → lock flow (Section 3)
+Scheduler job for check-in reminders + Twilio SMS/call integration (Section 4) — get this firing on a timer before wiring anything else to it
+Escalation logic: miss detection → punishment-ladder event → text to accountability_contact
+Chat endpoint wired to the system prompt, reading goal/event state, writing events rows, no write access to goal status and no control over the scheduler
+Punishment-ladder config (Section 5) as a small editable list
+Seed the three goals from Section 6 as proposed — nothing auto-activates, including the escalation contact, which needs its own explicit confirmation step before any real text goes to that person
