@@ -61,7 +61,13 @@ const queryClient = new QueryClient();
 const fmtDate = (value?: string | null) =>
   value ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)) : 'Not set';
 const fmtTime = (value?: string | null) =>
-  value ? new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : 'Not scheduled';
+  value
+    ? /^\d{2}:\d{2}$/.test(value)
+      ? new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(`1970-01-01T${value}:00`))
+      : new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+    : 'Not scheduled';
+const timeForInput = (value?: string | null) =>
+  value ? (/^\d{2}:\d{2}$/.test(value) ? value : new Date(value).toISOString().slice(11, 16)) : '';
 const titleForEvent = (type: string) =>
   ({ check_in: 'Check-in recorded', failure: 'Failure recorded', consequence_issued: 'Consequence issued', consequence_done: 'Consequence completed', note: 'Note added', escalation_sent: 'Escalation sent' } as Record<string, string>)[type] || type;
 const statusTone = (status: string) =>
@@ -137,7 +143,7 @@ function GoalForm({ editing, onDone }: { editing?: Goal; onDone: () => void }) {
   const [name, setName] = useState(editing?.name || '');
   const [successCondition, setSuccess] = useState(editing?.successCondition || '');
   const [failureCondition, setFailure] = useState(editing?.failureCondition || '');
-  const [checkInTime, setCheckInTime] = useState(editing?.checkInTime ? new Date(editing.checkInTime).toISOString().slice(11, 16) : '');
+  const [checkInTime, setCheckInTime] = useState(timeForInput(editing?.checkInTime));
   const submit = (e: FormEvent) => { e.preventDefault(); const data: GoalInput = { name: name.trim(), successCondition: successCondition.trim(), failureCondition: failureCondition.trim(), checkInTime: checkInTime ? new Date(`1970-01-01T${checkInTime}:00`).toISOString() : null }; if (editing) update.mutate({ id: editing.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListGoalsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); onDone(); } }); else create.mutate({ data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListGoalsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); onDone(); } }); };
   const pending = create.isPending || update.isPending;
   return <form data-testid="form-goal" onSubmit={submit} className="grid gap-4 rounded-2xl border border-primary/20 bg-secondary/40 p-5"><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-primary">{editing ? 'Edit proposal' : 'New proposal'}</p><h2 className="mt-1 text-lg font-extrabold">{editing ? 'Make the terms precise.' : 'Name the commitment.'}</h2></div><button type="button" data-testid="button-cancel-goal-form" onClick={onDone} className="rounded-lg p-1 text-muted-foreground hover:bg-background"><X size={17} /></button></div><Field testId="input-goal-name" label="Commitment" value={name} onChange={setName} placeholder="What will you do?" /><Field testId="input-goal-success" label="Success condition" value={successCondition} onChange={setSuccess} placeholder="How will you know it happened?" multiline /><Field testId="input-goal-failure" label="Failure condition" value={failureCondition} onChange={setFailure} placeholder="What counts as not doing it?" multiline /><Field testId="input-goal-check-in" label="Daily check-in time (optional)" value={checkInTime} onChange={setCheckInTime} type="time" /><div className="flex justify-end gap-2"><Button type="button" data-testid="button-cancel-goal" onClick={onDone} variant="ghost">Cancel</Button><Button data-testid="button-save-goal" disabled={pending || !name.trim() || !successCondition.trim() || !failureCondition.trim()}><Save size={15} /> {pending ? 'Saving...' : editing ? 'Save changes' : 'Add proposal'}</Button></div>{(create.isError || update.isError) && <p data-testid="status-goal-form-error" className="text-xs text-red-800">{apiError(create.error || update.error)}</p>}</form>;

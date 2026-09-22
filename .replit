@@ -21,3 +21,9 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+TWILIO_FROM_NUMBER = "+19129142161"
+ACCOUNTABILITY_USER_PHONE = "9004230955"

@@ -122,6 +122,12 @@ if ((sqlite.prepare("SELECT COUNT(*) AS count FROM goals").get() as { count: num
 const asString = (value: unknown): string => String(value ?? "");
 const asNullableString = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
+const normalizeCheckInTime = (value?: string | null): string | null => {
+  if (!value) return null;
+  if (/^\d{2}:\d{2}$/.test(value)) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(11, 16);
+};
 
 function toGoal(row: Record<string, unknown>): Goal {
   return {
@@ -168,7 +174,7 @@ export function createGoal(input: {
       INSERT INTO goals (name, success_condition, failure_condition, status, created_at, check_in_time)
       VALUES (?, ?, ?, 'proposed', ?, ?)
     `)
-    .run(input.name, input.successCondition, input.failureCondition, createdAt, input.checkInTime ?? null);
+    .run(input.name, input.successCondition, input.failureCondition, createdAt, normalizeCheckInTime(input.checkInTime));
   return getGoal(Number(result.lastInsertRowid)) as Goal;
 }
 
@@ -198,7 +204,7 @@ export function updateGoal(
   for (const key of Object.keys(mapping) as (keyof typeof mapping)[]) {
     if (input[key] !== undefined) {
       fields.push(`${mapping[key]} = ?`);
-      values.push(input[key] as string | null);
+      values.push(key === "checkInTime" ? normalizeCheckInTime(input[key] as string | null) : input[key] as string | null);
     }
   }
   if (fields.length > 0) {
